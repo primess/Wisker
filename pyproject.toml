@@ -22,7 +22,6 @@ classifiers = [
 ]
 dependencies = [
     "openai>=1.0",
-    "pyaudio>=0.2.14",
     "pyperclip>=1.8",
     "rich>=13.0",
     "click>=8.0",
@@ -32,6 +31,9 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "ruff>=0.4",
+]
+audio = [
+    "pyaudio>=0.2.14",
 ]
 
 [project.scripts]
