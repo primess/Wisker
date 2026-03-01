@@ -21,6 +21,7 @@ classifiers = [
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
+    "openai>=1.0",
     "SpeechRecognition>=3.10",
     "pyperclip>=1.8",
     "rich>=13.0",

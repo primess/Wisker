@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import signal
 from collections.abc import Generator
 
 import speech_recognition as sr
 
 
 def listen_and_transcribe(
-    phrase_time_limit: int = 5,
-    pause_threshold: float = 1.0,
+    phrase_time_limit: int = 10,
+    pause_threshold: float = 1.5,
+    listen_timeout: int = 30,
 ) -> Generator[str, None, None]:
     """Record from the microphone and yield raw transcription strings.
 
@@ -19,26 +21,36 @@ def listen_and_transcribe(
     Args:
         phrase_time_limit: Max seconds per phrase before forcing a recognition attempt.
         pause_threshold: Seconds of silence that mark the end of a phrase.
+        listen_timeout: Max seconds to wait for speech before cycling (allows Ctrl+C).
     """
     recognizer = sr.Recognizer()
     recognizer.pause_threshold = pause_threshold
     recognizer.dynamic_energy_threshold = True
 
-    with sr.Microphone() as source:
-        # Brief calibration for ambient noise
+    mic = sr.Microphone()
+    with mic as source:
         recognizer.adjust_for_ambient_noise(source, duration=0.5)
 
-        while True:
+    while True:
+        with mic as source:
             try:
-                audio = recognizer.listen(source, phrase_time_limit=phrase_time_limit)
-                text = recognizer.recognize_google(audio)
-                if text:
-                    yield text
-            except sr.UnknownValueError:
-                # Couldn't understand — skip silently
-                pass
-            except sr.RequestError as exc:
-                yield f"[recognition error: {exc}]"
+                audio = recognizer.listen(
+                    source,
+                    timeout=listen_timeout,
+                    phrase_time_limit=phrase_time_limit,
+                )
+            except sr.WaitTimeoutError:
+                # No speech detected within timeout — loop back so Ctrl+C can fire
+                continue
+
+        try:
+            text = recognizer.recognize_google(audio)
+            if text:
+                yield text
+        except sr.UnknownValueError:
+            pass
+        except sr.RequestError as exc:
+            yield f"[recognition error: {exc}]"
 
 
 def transcribe_file(file_path: str) -> str:

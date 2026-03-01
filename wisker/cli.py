@@ -1,5 +1,6 @@
 """Wisker CLI — smart speech-to-text cleanup."""
 
+import os
 import sys
 
 import click
@@ -50,44 +51,54 @@ def clean_cmd(text: str | None, file_path: str | None, output_path: str | None):
 
 
 @main.command()
-@click.option("--output", "-o", "output_path", type=click.Path(), help="Save cleaned text to a file")
+@click.option("--output", "-o", "output_path", type=click.Path(), help="Save final document to a file")
 @click.option("--clipboard/--no-clipboard", default=True, help="Copy result to clipboard")
-def listen(output_path: str | None, clipboard: bool):
+@click.option("--model", "-m", default="gpt-4o-mini", help="GitHub Models model name")
+def listen(output_path: str | None, clipboard: bool, model: str):
     """Start live transcription from your microphone.
 
-    Speak naturally — Wisker will clean up the output in real time.
+    Speak naturally — Wisker uses an LLM to build a smart document from
+    your speech. It understands context, so you can say things like
+    "change the second item to milk" and it will edit your notes.
+
     Press Ctrl+C to stop.
     """
     from wisker.transcriber import listen_and_transcribe
+    from wisker.processor import DocumentProcessor
 
     console.print("[bold cyan]🎙️  Wisker is listening...[/bold cyan] (Ctrl+C to stop)")
-    console.print("[dim]No API key needed — uses Google's free speech recognition[/dim]\n")
+    console.print(f"[dim]Using GitHub Models ({model}) • speech via Google free API[/dim]\n")
 
-    all_cleaned: list[str] = []
+    try:
+        processor = DocumentProcessor(model=model)
+    except EnvironmentError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise SystemExit(1)
 
     try:
         for raw_text in listen_and_transcribe():
-            cleaned = clean(raw_text)
-            if cleaned:
-                console.print(f"  [green]▸[/green] {cleaned}")
-                all_cleaned.append(cleaned)
+            console.print(f"  [dim]heard:[/dim] {raw_text}")
+            document = processor.process(raw_text)
+            console.print()
+            console.print(Panel(document, title="📝 Document", border_style="green"))
+            console.print()
     except KeyboardInterrupt:
         pass
 
-    full_text = " ".join(all_cleaned)
+    final = processor.document
 
-    if full_text:
-        console.print(f"\n[bold green]── Final Output ──[/bold green]\n{full_text}\n")
+    if final:
+        console.print(f"\n[bold green]── Final Document ──[/bold green]\n{final}\n")
 
         if output_path:
             with open(output_path, "w") as f:
-                f.write(full_text + "\n")
+                f.write(final + "\n")
             console.print(f"[green]✓[/green] Saved to {output_path}")
 
         if clipboard:
             try:
                 import pyperclip
-                pyperclip.copy(full_text)
+                pyperclip.copy(final)
                 console.print("[dim]📋 Copied to clipboard[/dim]")
             except Exception:
                 console.print("[dim]⚠️  Could not copy to clipboard[/dim]")
