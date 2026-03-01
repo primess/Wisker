@@ -53,7 +53,7 @@ def clean_cmd(text: str | None, file_path: str | None, output_path: str | None):
 @main.command()
 @click.option("--output", "-o", "output_path", type=click.Path(), help="Save final document to a file")
 @click.option("--clipboard/--no-clipboard", default=True, help="Copy result to clipboard")
-@click.option("--model", "-m", default="gpt-4o-mini", help="GitHub Models model name")
+@click.option("--model", "-m", default="gpt-5-mini", help="GitHub Models model name")
 def listen(output_path: str | None, clipboard: bool, model: str):
     """Start live transcription from your microphone.
 

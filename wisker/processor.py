@@ -73,7 +73,7 @@ def get_client() -> OpenAI:
 class DocumentProcessor:
     """Maintains a running document and processes spoken phrases via LLM."""
 
-    def __init__(self, model: str = "gpt-4o-mini"):
+    def __init__(self, model: str = "gpt-5-mini"):
         self.client = get_client()
         self.model = model
         self.document = ""
