@@ -50,28 +50,27 @@ def clean_cmd(text: str | None, file_path: str | None, output_path: str | None):
 
 
 @main.command()
+@click.option("--output", "-o", "output_path", type=click.Path(), help="Save cleaned text to a file")
 @click.option("--clipboard/--no-clipboard", default=True, help="Copy result to clipboard")
-def listen(clipboard: bool):
+def listen(output_path: str | None, clipboard: bool):
     """Start live transcription from your microphone.
 
     Speak naturally — Wisker will clean up the output in real time.
     Press Ctrl+C to stop.
     """
-    from wisker.recorder import record_chunks, SAMPLE_RATE, CHANNELS
-    from wisker.transcriber import transcribe_audio
+    from wisker.transcriber import listen_and_transcribe
 
-    console.print("[bold cyan]🎙️ Wisker is listening...[/bold cyan] (Ctrl+C to stop)\n")
+    console.print("[bold cyan]🎙️  Wisker is listening...[/bold cyan] (Ctrl+C to stop)")
+    console.print("[dim]No API key needed — uses Google's free speech recognition[/dim]\n")
 
     all_cleaned: list[str] = []
 
     try:
-        for audio_chunk in record_chunks():
-            raw_text = transcribe_audio(audio_chunk, sample_rate=SAMPLE_RATE, channels=CHANNELS)
-            if raw_text:
-                cleaned = clean(raw_text)
-                if cleaned:
-                    console.print(f"  {cleaned}")
-                    all_cleaned.append(cleaned)
+        for raw_text in listen_and_transcribe():
+            cleaned = clean(raw_text)
+            if cleaned:
+                console.print(f"  [green]▸[/green] {cleaned}")
+                all_cleaned.append(cleaned)
     except KeyboardInterrupt:
         pass
 
@@ -79,6 +78,12 @@ def listen(clipboard: bool):
 
     if full_text:
         console.print(f"\n[bold green]── Final Output ──[/bold green]\n{full_text}\n")
+
+        if output_path:
+            with open(output_path, "w") as f:
+                f.write(full_text + "\n")
+            console.print(f"[green]✓[/green] Saved to {output_path}")
+
         if clipboard:
             try:
                 import pyperclip

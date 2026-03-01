@@ -1,70 +1,56 @@
-"""Audio transcription using OpenAI Whisper API."""
+"""Audio transcription using SpeechRecognition (Google free API — no key needed)."""
 
-import io
-import os
-import tempfile
-import wave
+from __future__ import annotations
 
-from openai import OpenAI
+from collections.abc import Generator
 
-
-def get_client() -> OpenAI:
-    """Create an OpenAI client, raising a clear error if no API key is set."""
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise EnvironmentError(
-            "OPENAI_API_KEY environment variable is not set.\n"
-            "Set it with: export OPENAI_API_KEY='your-key-here'"
-        )
-    return OpenAI(api_key=api_key)
+import speech_recognition as sr
 
 
-def transcribe_audio(audio_data: bytes, sample_rate: int = 16000, channels: int = 1) -> str:
-    """Transcribe raw audio bytes using OpenAI Whisper.
+def listen_and_transcribe(
+    phrase_time_limit: int = 5,
+    pause_threshold: float = 1.0,
+) -> Generator[str, None, None]:
+    """Record from the microphone and yield raw transcription strings.
+
+    Each yield is one recognised phrase. Runs until the generator is closed
+    (typically via KeyboardInterrupt).
 
     Args:
-        audio_data: Raw PCM audio bytes.
-        sample_rate: Audio sample rate in Hz.
-        channels: Number of audio channels.
-
-    Returns:
-        Raw transcription text.
+        phrase_time_limit: Max seconds per phrase before forcing a recognition attempt.
+        pause_threshold: Seconds of silence that mark the end of a phrase.
     """
-    client = get_client()
+    recognizer = sr.Recognizer()
+    recognizer.pause_threshold = pause_threshold
+    recognizer.dynamic_energy_threshold = True
 
-    # Write raw PCM to a WAV buffer
-    wav_buffer = io.BytesIO()
-    with wave.open(wav_buffer, "wb") as wf:
-        wf.setnchannels(channels)
-        wf.setsampwidth(2)  # 16-bit audio
-        wf.setframerate(sample_rate)
-        wf.writeframes(audio_data)
-    wav_buffer.seek(0)
-    wav_buffer.name = "audio.wav"
+    with sr.Microphone() as source:
+        # Brief calibration for ambient noise
+        recognizer.adjust_for_ambient_noise(source, duration=0.5)
 
-    response = client.audio.transcriptions.create(
-        model="whisper-1",
-        file=wav_buffer,
-        response_format="text",
-    )
-    return response.strip()
+        while True:
+            try:
+                audio = recognizer.listen(source, phrase_time_limit=phrase_time_limit)
+                text = recognizer.recognize_google(audio)
+                if text:
+                    yield text
+            except sr.UnknownValueError:
+                # Couldn't understand — skip silently
+                pass
+            except sr.RequestError as exc:
+                yield f"[recognition error: {exc}]"
 
 
 def transcribe_file(file_path: str) -> str:
-    """Transcribe an audio file using OpenAI Whisper.
+    """Transcribe an audio file using Google's free speech recognition.
 
     Args:
-        file_path: Path to an audio file (wav, mp3, m4a, etc.).
+        file_path: Path to a WAV/AIFF/FLAC audio file.
 
     Returns:
         Raw transcription text.
     """
-    client = get_client()
-
-    with open(file_path, "rb") as f:
-        response = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=f,
-            response_format="text",
-        )
-    return response.strip()
+    recognizer = sr.Recognizer()
+    with sr.AudioFile(file_path) as source:
+        audio = recognizer.record(source)
+    return recognizer.recognize_google(audio)
