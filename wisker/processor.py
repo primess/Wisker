@@ -99,7 +99,7 @@ class DocumentProcessor:
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.1,
-            max_tokens=2048,
+            max_completion_tokens=2048,
         )
 
         self.document = response.choices[0].message.content.strip()

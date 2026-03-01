@@ -78,10 +78,13 @@ def listen(output_path: str | None, clipboard: bool, model: str):
     try:
         for raw_text in listen_and_transcribe():
             console.print(f"  [dim]heard:[/dim] {raw_text}")
-            document = processor.process(raw_text)
-            console.print()
-            console.print(Panel(document, title="📝 Document", border_style="green"))
-            console.print()
+            try:
+                document = processor.process(raw_text)
+                console.print()
+                console.print(Panel(document, title="📝 Document", border_style="green"))
+                console.print()
+            except Exception as e:
+                console.print(f"  [red]LLM error:[/red] {e}")
     except KeyboardInterrupt:
         pass
 
