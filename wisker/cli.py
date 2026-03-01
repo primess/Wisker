@@ -1,6 +1,7 @@
 """Wisker CLI — smart speech-to-text cleanup."""
 
 import os
+import signal
 import sys
 
 import click
@@ -77,6 +78,15 @@ def listen(output_path: str | None, clipboard: bool, model: str):
 
     transcriber = LiveTranscriber()
 
+    # Use explicit signal handler so Ctrl+C always works immediately,
+    # even if the main thread is blocked in an HTTP call.
+    original_handler = signal.getsignal(signal.SIGINT)
+
+    def _handle_sigint(signum, frame):
+        transcriber.stop()
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+
     try:
         for raw_text in transcriber.run():
             console.print(f"  [dim]heard:[/dim] {raw_text}")
@@ -86,8 +96,11 @@ def listen(output_path: str | None, clipboard: bool, model: str):
                 console.print(Panel(document, title="📝 Document", border_style="green"))
                 console.print()
             except Exception as e:
+                if transcriber._stop.is_set():
+                    break
                 console.print(f"  [red]LLM error:[/red] {e}")
-    except KeyboardInterrupt:
+    finally:
+        signal.signal(signal.SIGINT, original_handler)
         transcriber.stop()
 
     final = processor.document

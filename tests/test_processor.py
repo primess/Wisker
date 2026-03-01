@@ -1,6 +1,6 @@
 """Tests for the DocumentProcessor (LLM integration, mocked)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 
@@ -124,3 +124,54 @@ class TestDocumentProcessor:
         proc = DocumentProcessor()
         assert proc.document == ""
         assert proc.history == []
+
+    @patch("wisker.processor.get_client")
+    def test_no_temperature_param_sent(self, mock_get_client):
+        """gpt-5-mini rejects 'temperature' — verify we don't send it."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        proc = DocumentProcessor()
+        proc.process("test")
+
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert "temperature" not in call_kwargs, (
+            f"'temperature' should not be sent — gpt-5-mini rejects it. Got: {call_kwargs}"
+        )
+
+    @patch("wisker.processor.get_client")
+    def test_no_max_tokens_param_sent(self, mock_get_client):
+        """gpt-5-mini rejects 'max_tokens' — only 'max_completion_tokens' is valid."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        proc = DocumentProcessor()
+        proc.process("test")
+
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        assert "max_tokens" not in call_kwargs, (
+            f"'max_tokens' should not be sent — use max_completion_tokens. Got: {call_kwargs}"
+        )
+
+    @patch("wisker.processor.get_client")
+    def test_only_safe_api_params(self, mock_get_client):
+        """Only model, messages, and max_completion_tokens should be sent."""
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="ok"))]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        proc = DocumentProcessor()
+        proc.process("test")
+
+        call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+        allowed = {"model", "messages", "max_completion_tokens"}
+        extra = set(call_kwargs.keys()) - allowed
+        assert not extra, f"Unexpected API params {extra} — may cause 400 errors"

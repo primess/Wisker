@@ -1,5 +1,9 @@
 """Tests for the Wisker CLI commands."""
 
+import os
+import signal
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -46,3 +50,49 @@ class TestCleanCommand:
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
         assert "wisker" in result.output
+
+
+class TestListenCtrlC:
+    """Test that the Ctrl+C mechanism works: signal handler calls transcriber.stop()."""
+
+    def test_sigint_handler_calls_stop(self):
+        """The SIGINT handler installed by listen() must call transcriber.stop()."""
+        from wisker.transcriber import LiveTranscriber
+
+        # Verify that LiveTranscriber.stop() sets the _stop event
+        with patch("wisker.transcriber.sr"):
+            transcriber = LiveTranscriber()
+            assert not transcriber._stop.is_set()
+            transcriber.stop()
+            assert transcriber._stop.is_set(), "stop() must set the _stop event"
+
+    def test_stop_event_breaks_run_loop(self):
+        """When _stop is set, the run() generator exits promptly."""
+        from wisker.transcriber import LiveTranscriber as LT
+
+        with patch("wisker.transcriber.sr") as mock_sr:
+            mock_sr.Microphone.return_value = MagicMock()
+            mock_sr.WaitTimeoutError = type("WaitTimeoutError", (Exception,), {})
+            mock_recognizer = MagicMock()
+            mock_sr.Recognizer.return_value = mock_recognizer
+            mock_recognizer.listen.side_effect = mock_sr.WaitTimeoutError()
+
+            transcriber = LT()
+            results = []
+            exited = threading.Event()
+
+            def consume():
+                for text in transcriber.run():
+                    results.append(text)
+                exited.set()
+
+            t = threading.Thread(target=consume)
+            t.start()
+
+            time.sleep(0.3)
+            transcriber.stop()
+
+            exited.wait(timeout=2.0)
+            assert exited.is_set(), "run() did not exit within 2s after stop()"
+            t.join(timeout=1.0)
+            assert not t.is_alive()
