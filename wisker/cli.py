@@ -63,7 +63,7 @@ def listen(output_path: str | None, clipboard: bool, model: str):
 
     Press Ctrl+C to stop.
     """
-    from wisker.transcriber import listen_and_transcribe
+    from wisker.transcriber import LiveTranscriber
     from wisker.processor import DocumentProcessor
 
     console.print("[bold cyan]🎙️  Wisker is listening...[/bold cyan] (Ctrl+C to stop)")
@@ -75,8 +75,10 @@ def listen(output_path: str | None, clipboard: bool, model: str):
         console.print(f"[red]Error:[/red] {e}")
         raise SystemExit(1)
 
+    transcriber = LiveTranscriber()
+
     try:
-        for raw_text in listen_and_transcribe():
+        for raw_text in transcriber.run():
             console.print(f"  [dim]heard:[/dim] {raw_text}")
             try:
                 document = processor.process(raw_text)
@@ -86,7 +88,7 @@ def listen(output_path: str | None, clipboard: bool, model: str):
             except Exception as e:
                 console.print(f"  [red]LLM error:[/red] {e}")
     except KeyboardInterrupt:
-        pass
+        transcriber.stop()
 
     final = processor.document
 

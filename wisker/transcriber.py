@@ -2,55 +2,85 @@
 
 from __future__ import annotations
 
-import signal
+import threading
 from collections.abc import Generator
 
 import speech_recognition as sr
 
 
-def listen_and_transcribe(
-    phrase_time_limit: int = 10,
-    pause_threshold: float = 1.5,
-    listen_timeout: int = 30,
-) -> Generator[str, None, None]:
-    """Record from the microphone and yield raw transcription strings.
+class LiveTranscriber:
+    """Threaded live transcriber that responds to Ctrl+C reliably.
 
-    Each yield is one recognised phrase. Runs until the generator is closed
-    (typically via KeyboardInterrupt).
-
-    Args:
-        phrase_time_limit: Max seconds per phrase before forcing a recognition attempt.
-        pause_threshold: Seconds of silence that mark the end of a phrase.
-        listen_timeout: Max seconds to wait for speech before cycling (allows Ctrl+C).
+    Uses a background thread for blocking mic I/O so the main thread
+    can always handle signals.
     """
-    recognizer = sr.Recognizer()
-    recognizer.pause_threshold = pause_threshold
-    recognizer.dynamic_energy_threshold = True
 
-    mic = sr.Microphone()
-    with mic as source:
-        recognizer.adjust_for_ambient_noise(source, duration=0.5)
+    def __init__(
+        self,
+        phrase_time_limit: int = 10,
+        pause_threshold: float = 1.5,
+    ):
+        self.phrase_time_limit = phrase_time_limit
+        self.recognizer = sr.Recognizer()
+        self.recognizer.pause_threshold = pause_threshold
+        self.recognizer.dynamic_energy_threshold = True
+        self._stop = threading.Event()
+        self._results: list[str] = []
+        self._lock = threading.Lock()
 
-    while True:
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _listen_loop(self) -> None:
+        """Background thread: record and recognise in a loop."""
+        mic = sr.Microphone()
         with mic as source:
+            self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+
+        while not self._stop.is_set():
+            with mic as source:
+                try:
+                    audio = self.recognizer.listen(
+                        source,
+                        timeout=2,
+                        phrase_time_limit=self.phrase_time_limit,
+                    )
+                except sr.WaitTimeoutError:
+                    continue
+
+            if self._stop.is_set():
+                break
+
             try:
-                audio = recognizer.listen(
-                    source,
-                    timeout=listen_timeout,
-                    phrase_time_limit=phrase_time_limit,
-                )
-            except sr.WaitTimeoutError:
-                # No speech detected within timeout — loop back so Ctrl+C can fire
-                continue
+                text = self.recognizer.recognize_google(audio)
+                if text:
+                    with self._lock:
+                        self._results.append(text)
+            except sr.UnknownValueError:
+                pass
+            except sr.RequestError as exc:
+                with self._lock:
+                    self._results.append(f"[recognition error: {exc}]")
+
+    def run(self) -> Generator[str, None, None]:
+        """Start listening and yield transcribed phrases.
+
+        The generator exits cleanly when stop() is called.
+        """
+        thread = threading.Thread(target=self._listen_loop, daemon=True)
+        thread.start()
 
         try:
-            text = recognizer.recognize_google(audio)
-            if text:
-                yield text
-        except sr.UnknownValueError:
-            pass
-        except sr.RequestError as exc:
-            yield f"[recognition error: {exc}]"
+            while not self._stop.is_set():
+                self._stop.wait(timeout=0.1)
+                with self._lock:
+                    batch = list(self._results)
+                    self._results.clear()
+                for text in batch:
+                    yield text
+        finally:
+            self.stop()
+            thread.join(timeout=3)
 
 
 def transcribe_file(file_path: str) -> str:
